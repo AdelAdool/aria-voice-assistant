@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# Models (large binary files)
+models/
+*.pt
+*.pth
+*.onnx
+
+# Audio temp files
+*.wav
+*.mp3
+*.webm
+tmp_*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

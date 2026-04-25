@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ARIA — Local Voice Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ── Reset & Tokens ───────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #080c10;
+    --surface:   #0d1219;
+    --border:    #1a2535;
+    --border-hi: #243448;
+    --text:      #c8d8e8;
+    --text-dim:  #4a6280;
+    --text-bright: #e8f4ff;
+    --accent:    #00e5ff;
+    --accent2:   #7b61ff;
+    --accent3:   #ff6b6b;
+    --green:     #00ff88;
+    --user-bg:   #0f1e30;
+    --aria-bg:   #0c1520;
+    --radius:    12px;
+    --mono:      'Space Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    overflow: hidden;
+  }
+
+  /* ── Grid Layout ─────────────────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 60px 1fr;
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* ── Topbar ──────────────────────────────────────────────── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: relative;
+    z-index: 10;
+  }
+  .topbar-logo {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 0.15em;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(0,229,255,0.4); }
+    50% { opacity: 0.8; transform: scale(1.2); box-shadow: 0 0 0 6px rgba(0,229,255,0); }
+  }
+  .topbar-status {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .status-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 11px;
+    transition: all 0.3s;
+  }
+  .status-chip.online  { border-color: rgba(0,255,136,0.3); color: var(--green); }
+  .status-chip.offline { border-color: rgba(255,107,107,0.3); color: var(--accent3); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── Sidebar ─────────────────────────────────────────────── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-section {
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-label {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* Model selector */
+  .model-selector {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .model-selector:focus { outline: none; border-color: var(--accent); }
+
+  /* Whisper mode toggle */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .toggle-label { font-size: 12px; color: var(--text-dim); }
+  .toggle {
+    position: relative;
+    width: 36px; height: 20px;
+  }
+  .toggle input { display: none; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--accent); }
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 3px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: white;
+    transition: transform 0.3s;
+  }
+  .toggle input:checked + .toggle-track::after { transform: translateX(16px); }
+
+  /* Stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .stat-value {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--text-bright);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-key { font-size: 10px; color: var(--text-dim); letter-spacing: 0.05em; }
+
+  /* History list */
+  .history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .history-list::-webkit-scrollbar { width: 4px; }
+  .history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .history-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-item:hover { background: var(--border); color: var(--text); }
+
+  .sidebar-actions { padding: 12px 16px; border-top: 1px solid var(--border); }
+  .btn-clear {
+    width: 100%;
+    padding: 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+  .btn-clear:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* ── Main Chat Area ───────────────────────────────────────── */
+  .main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Ambient background effect */
+  .main::before {
+    content: '';
+    position: absolute;
+    top: -100px; left: 50%;
+    transform: translateX(-50%);
+    width: 600px; height: 300px;
+    background: radial-gradient(ellipse, rgba(0,229,255,0.04) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Messages */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
+  }
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Welcome screen */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 16px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+  .welcome-icon {
+    font-size: 48px;
+    filter: grayscale(0.5);
+    animation: float 4s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  .welcome h2 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 22px;
+    color: var(--text);
+    letter-spacing: 0.05em;
+  }
+  .welcome p { font-size: 12px; line-height: 1.8; max-width: 400px; }
+  .welcome-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .chip {
+    padding: 6px 14px;
+    border: 1px solid var(--border-hi);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Message bubbles */
+  .msg {
+    display: flex;
+    gap: 14px;
+    max-width: 800px;
+    animation: msg-in 0.3s ease;
+  }
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg-avatar {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .msg.user .msg-avatar { background: rgba(123,97,255,0.2); border: 1px solid rgba(123,97,255,0.3); }
+  .msg.aria .msg-avatar { background: rgba(0,229,255,0.1); border: 1px solid rgba(0,229,255,0.2); }
+  .msg-body { display: flex; flex-direction: column; gap: 6px; }
+  .msg-meta { display: flex; align-items: center; gap: 10px; }
+  .msg.user .msg-meta { flex-direction: row-reverse; }
+  .msg-name { font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; }
+  .msg-time { font-size: 10px; color: var(--text-dim); opacity: 0.6; }
+  .msg-bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    line-height: 1.7;
+    font-size: 13px;
+    max-width: 580px;
+  }
+  .msg.user .msg-bubble {
+    background: var(--user-bg);
+    border: 1px solid rgba(123,97,255,0.2);
+    border-top-right-radius: 4px;
+    color: var(--text-bright);
+  }
+  .msg.aria .msg-bubble {
+    background: var(--aria-bg);
+    border: 1px solid var(--border);
+    border-top-left-radius: 4px;
+    color: var(--text);
+  }
+  .msg-timings {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .timing-pill {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  /* Typing indicator */
+  .typing-bubble { display: flex; gap: 4px; padding: 14px 18px; }
+  .typing-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: typing 1.4s ease-in-out infinite;
+    opacity: 0.5;
+  }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typing {
+    0%, 80%, 100% { transform: scale(1); opacity: 0.5; }
+    40% { transform: scale(1.3); opacity: 1; }
+  }
+
+  /* ── Input Bar ───────────────────────────────────────────── */
+  .input-bar {
+    padding: 20px 40px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    position: relative;
+    z-index: 5;
+  }
+  .input-wrap {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    transition: border-color 0.2s;
+  }
+  .input-wrap:focus-within { border-color: var(--accent); }
+  .input-wrap.recording {
+    border-color: var(--accent3);
+    box-shadow: 0 0 0 3px rgba(255,107,107,0.1);
+    animation: record-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes record-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,107,0.2); }
+    50% { box-shadow: 0 0 0 8px rgba(255,107,107,0); }
+  }
+
+  #text-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 13px;
+    resize: none;
+    max-height: 120px;
+    min-height: 24px;
+    line-height: 1.6;
+    overflow-y: auto;
+  }
+  #text-input::placeholder { color: var(--text-dim); }
+  #text-input::-webkit-scrollbar { width: 3px; }
+  #text-input::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .input-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .icon-btn {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .icon-btn.active { background: rgba(255,107,107,0.15); border-color: var(--accent3); color: var(--accent3); }
+  .icon-btn.send { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .icon-btn.send:hover { background: #33eeff; border-color: #33eeff; }
+  .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .input-hint {
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Waveform Visualizer ─────────────────────────────────── */
+  .waveform-bar {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 32px;
+    padding: 0 8px;
+  }
+  .waveform-bar.visible { display: flex; }
+  .wave-line {
+    width: 3px;
+    background: var(--accent3);
+    border-radius: 2px;
+    animation: wave 0.8s ease-in-out infinite;
+    min-height: 4px;
+  }
+  @keyframes wave {
+    0%, 100% { height: 4px; }
+    50% { height: 20px; }
+  }
+  .wave-line:nth-child(1) { animation-delay: 0.0s; }
+  .wave-line:nth-child(2) { animation-delay: 0.1s; }
+  .wave-line:nth-child(3) { animation-delay: 0.2s; }
+  .wave-line:nth-child(4) { animation-delay: 0.15s; }
+  .wave-line:nth-child(5) { animation-delay: 0.05s; }
+  .wave-line:nth-child(6) { animation-delay: 0.25s; }
+  .wave-line:nth-child(7) { animation-delay: 0.12s; }
+
+  /* ── Notifications ───────────────────────────────────────── */
+  .toast-container {
+    position: fixed;
+    bottom: 100px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+  }
+  .toast {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    border: 1px solid;
+    animation: toast-in 0.3s ease;
+    max-width: 280px;
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .toast.error   { background: rgba(255,107,107,0.1); border-color: rgba(255,107,107,0.3); color: var(--accent3); }
+  .toast.success { background: rgba(0,255,136,0.1);   border-color: rgba(0,255,136,0.3);   color: var(--green); }
+  .toast.info    { background: rgba(0,229,255,0.1);   border-color: rgba(0,229,255,0.3);   color: var(--accent); }
+
+  /* Scrollbar global */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-logo">
+      <div class="logo-dot"></div>
+      ARIA
+    </div>
+    <div class="topbar-status">
+      <div class="status-chip offline" id="server-status">
+        <div class="status-dot"></div>
+        <span>Connecting...</span>
+      </div>
+      <div class="status-chip" id="ollama-status" style="display:none">
+        <div class="status-dot"></div>
+        <span id="model-name">—</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">LLM Model</div>
+      <select class="model-selector" id="model-select">
+        <option value="">Loading models...</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Settings</div>
+      <div class="toggle-row">
+        <span class="toggle-label">Voice output (TTS)</span>
+        <label class="toggle">
+          <input type="checkbox" id="tts-toggle" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Stream responses</span>
+        <label class="toggle">
+          <input type="checkbox" id="stream-toggle" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Auto-play audio</span>
+        <label class="toggle">
+          <input type="checkbox" id="autoplay-toggle" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Session Stats</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-turns">0</div>
+          <div class="stat-key">Turns</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-avg-llm">—</div>
+          <div class="stat-key">Avg LLM</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-avg-stt">—</div>
+          <div class="stat-key">Avg STT</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-avg-tts">—</div>
+          <div class="stat-key">Avg TTS</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-label" style="padding: 16px 16px 8px; font-size:10px; letter-spacing:0.15em; text-transform:uppercase; color:var(--text-dim)">History</div>
+    <div class="history-list" id="history-list">
+      <div style="color:var(--text-dim); font-size:11px; padding:8px 10px">No messages yet.</div>
+    </div>
+
+    <div class="sidebar-actions">
+      <button class="btn-clear" id="clear-btn">⌫ Clear conversation</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">🎙️</div>
+        <h2>Hey, I'm ARIA</h2>
+        <p>Your fully offline voice assistant.<br>Powered by Whisper · Ollama · Coqui TTS.<br>No cloud. No subscriptions. Just intelligence.</p>
+        <div class="welcome-chips">
+          <div class="chip" onclick="sendChip(this)">What can you do?</div>
+          <div class="chip" onclick="sendChip(this)">Tell me a fun fact</div>
+          <div class="chip" onclick="sendChip(this)">Write a short poem</div>
+          <div class="chip" onclick="sendChip(this)">Explain quantum computing</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrap" id="input-wrap">
+        <div class="waveform-bar" id="waveform">
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+        </div>
+        <textarea id="text-input" rows="1" placeholder="Type a message or press 🎤 to speak..."></textarea>
+        <div class="input-actions">
+          <button class="icon-btn" id="mic-btn" title="Hold to record">🎤</button>
+          <button class="icon-btn send" id="send-btn" title="Send (Enter)">↑</button>
+        </div>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for newline · 🎤 to record voice</div>
+    </div>
+  </main>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────────
+const SERVER = 'http://localhost:5000';
+
+// ── State ──────────────────────────────────────────────────────
+const state = {
+  recording: false,
+  mediaRecorder: null,
+  audioChunks: [],
+  turns: 0,
+  llmTimes: [],
+  sttTimes: [],
+  ttsTimes: [],
+};
+
+// ── DOM Refs ───────────────────────────────────────────────────
+const $messages   = document.getElementById('messages');
+const $welcome    = document.getElementById('welcome');
+const $textInput  = document.getElementById('text-input');
+const $sendBtn    = document.getElementById('send-btn');
+const $micBtn     = document.getElementById('mic-btn');
+const $inputWrap  = document.getElementById('input-wrap');
+const $waveform   = document.getElementById('waveform');
+const $clearBtn   = document.getElementById('clear-btn');
+const $modelSel   = document.getElementById('model-select');
+const $histList   = document.getElementById('history-list');
+
+// ── Toast ──────────────────────────────────────────────────────
+function toast(msg, type = 'info', duration = 3500) {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
+// ── Server Health ──────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${SERVER}/health`);
+    const d = await r.json();
+
+    const chip = document.getElementById('server-status');
+    chip.className = 'status-chip online';
+    chip.querySelector('span').textContent = 'Server online';
+
+    const ollama = d.ollama;
+    const ollamaChip = document.getElementById('ollama-status');
+    ollamaChip.style.display = 'flex';
+    if (ollama.running && ollama.model_available) {
+      ollamaChip.className = 'status-chip online';
+      document.getElementById('model-name').textContent = ollama.selected_model;
+    } else {
+      ollamaChip.className = 'status-chip offline';
+      document.getElementById('model-name').textContent = ollama.running ? 'Model missing' : 'Ollama offline';
+    }
+
+    await loadModels();
+  } catch {
+    document.getElementById('server-status').querySelector('span').textContent = 'Server offline';
+    toast('Cannot reach ARIA server. Is it running?', 'error', 6000);
+  }
+}
+
+// ── Models ─────────────────────────────────────────────────────
+async function loadModels() {
+  try {
+    const r = await fetch(`${SERVER}/models`);
+    const d = await r.json();
+    $modelSel.innerHTML = '';
+    if (!d.models?.length) {
+      $modelSel.innerHTML = '<option>No models found</option>';
+      return;
+    }
+    d.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m.includes(d.selected_model) || d.selected_model.includes(m.split(':')[0])) opt.selected = true;
+      $modelSel.appendChild(opt);
+    });
+  } catch {}
+}
+
+$modelSel.addEventListener('change', async () => {
+  await fetch(`${SERVER}/models/switch`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({model: $modelSel.value})
+  });
+  toast(`Switched to ${$modelSel.value}`, 'success');
+});
+
+// ── Message Rendering ─────────────────────────────────────────
+function now() {
+  return new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+function hideWelcome() {
+  if ($welcome) $welcome.style.display = 'none';
+}
+
+function addMessage(role, text, timings = null) {
+  hideWelcome();
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  wrap.innerHTML = `
+    <div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-name">${role === 'user' ? 'You' : 'ARIA'}</span>
+        <span class="msg-time">${now()}</span>
+      </div>
+      <div class="msg-bubble" id="bubble-${Date.now()}"></div>
+      ${timings ? renderTimings(timings) : ''}
+    </div>`;
+  const bubble = wrap.querySelector('.msg-bubble');
+  bubble.textContent = text;
+  $messages.appendChild(wrap);
+  $messages.scrollTop = $messages.scrollHeight;
+
+  // Update sidebar history
+  addHistoryItem(role, text);
+  updateStats(timings);
+  return bubble;
+}
+
+function renderTimings(t) {
+  const parts = [];
+  if (t.stt) parts.push(`<span class="timing-pill">STT ${t.stt}s</span>`);
+  if (t.llm) parts.push(`<span class="timing-pill">LLM ${t.llm}s</span>`);
+  if (t.tts) parts.push(`<span class="timing-pill">TTS ${t.tts}s</span>`);
+  return parts.length ? `<div class="msg-timings">${parts.join('')}</div>` : '';
+}
+
+function addTyping() {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg aria';
+  wrap.id = 'typing-msg';
+  wrap.innerHTML = `
+    <div class="msg-avatar">🤖</div>
+    <div class="msg-body">
+      <div class="msg-meta"><span class="msg-name">ARIA</span></div>
+      <div class="msg-bubble"><div class="typing-bubble">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div></div>
+    </div>`;
+  $messages.appendChild(wrap);
+  $messages.scrollTop = $messages.scrollHeight;
+  return wrap;
+}
+
+function removeTyping() {
+  document.getElementById('typing-msg')?.remove();
+}
+
+// ── Sidebar History ────────────────────────────────────────────
+let historyItems = [];
+function addHistoryItem(role, text) {
+  historyItems.push({role, text});
+  if (role === 'user') {
+    $histList.innerHTML = '';
+    historyItems.filter(i => i.role === 'user').slice(-10).forEach(i => {
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      div.textContent = i.text.slice(0, 50);
+      $histList.appendChild(div);
+    });
+  }
+}
+
+// ── Stats ──────────────────────────────────────────────────────
+function updateStats(timings) {
+  state.turns++;
+  document.getElementById('stat-turns').textContent = state.turns;
+  if (timings?.llm) {
+    state.llmTimes.push(timings.llm);
+    document.getElementById('stat-avg-llm').textContent =
+      (state.llmTimes.reduce((a,b)=>a+b,0)/state.llmTimes.length).toFixed(1)+'s';
+  }
+  if (timings?.stt) {
+    state.sttTimes.push(timings.stt);
+    document.getElementById('stat-avg-stt').textContent =
+      (state.sttTimes.reduce((a,b)=>a+b,0)/state.sttTimes.length).toFixed(1)+'s';
+  }
+  if (timings?.tts) {
+    state.ttsTimes.push(timings.tts);
+    document.getElementById('stat-avg-tts').textContent =
+      (state.ttsTimes.reduce((a,b)=>a+b,0)/state.ttsTimes.length).toFixed(1)+'s';
+  }
+}
+
+// ── TTS Playback ───────────────────────────────────────────────
+async function speak(text) {
+  if (!document.getElementById('tts-toggle').checked) return;
+  try {
+    const r = await fetch(`${SERVER}/speak`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text})
+    });
+    if (!r.ok) return;
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play();
+    audio.onended = () => URL.revokeObjectURL(url);
+  } catch (e) {
+    console.warn('TTS playback error:', e);
+  }
+}
+
+// ── Send Text Message ──────────────────────────────────────────
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  setInputEnabled(false);
+
+  addMessage('user', text);
+  $textInput.value = '';
+  $textInput.style.height = 'auto';
+
+  const typing = addTyping();
+  const stream = document.getElementById('stream-toggle').checked;
+
+  const t0 = Date.now();
+
+  try {
+    if (stream) {
+      removeTyping();
+      const bubble = addMessage('aria', '').parentElement.previousElementSibling;
+      // re-grab the actual bubble
+      const msgEl = $messages.lastElementChild;
+      const realBubble = msgEl.querySelector('.msg-bubble');
+      let fullText = '';
+
+      const r = await fetch(`${SERVER}/chat/stream`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text})
+      });
+
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        const lines = dec.decode(value).split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const d = JSON.parse(line.slice(6));
+            if (d.token) {
+              fullText += d.token;
+              realBubble.textContent = fullText;
+              $messages.scrollTop = $messages.scrollHeight;
+            }
+          }
+        }
+      }
+
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      if (document.getElementById('autoplay-toggle').checked) speak(fullText);
+      updateStats({llm: parseFloat(elapsed)});
+
+    } else {
+      const r = await fetch(`${SERVER}/chat`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text})
+      });
+      const d = await r.json();
+      removeTyping();
+      if (d.error) { toast(d.error, 'error'); return; }
+      addMessage('aria', d.reply, {llm: d.llm_time});
+      if (document.getElementById('autoplay-toggle').checked) speak(d.reply);
+    }
+  } catch (e) {
+    removeTyping();
+    toast('Network error: ' + e.message, 'error');
+  } finally {
+    setInputEnabled(true);
+    $textInput.focus();
+  }
+}
+
+function setInputEnabled(en) {
+  $sendBtn.disabled = !en;
+  $micBtn.disabled  = !en;
+  $textInput.disabled = !en;
+}
+
+// ── Voice Recording ───────────────────────────────────────────
+async function startRecording() {
+  if (!navigator.mediaDevices) {
+    toast('Microphone not available', 'error');
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  state.audioChunks = [];
+  state.mediaRecorder = new MediaRecorder(stream);
+  state.mediaRecorder.ondataavailable = e => state.audioChunks.push(e.data);
+  state.mediaRecorder.onstop = handleRecordingStop;
+  state.mediaRecorder.start();
+  state.recording = true;
+
+  $micBtn.classList.add('active');
+  $inputWrap.classList.add('recording');
+  $waveform.classList.add('visible');
+  $textInput.placeholder = 'Recording... release to send';
+  toast('Recording... release button to stop', 'info', 2000);
+}
+
+function stopRecording() {
+  if (!state.recording) return;
+  state.mediaRecorder.stop();
+  state.mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  state.recording = false;
+  $micBtn.classList.remove('active');
+  $inputWrap.classList.remove('recording');
+  $waveform.classList.remove('visible');
+  $textInput.placeholder = 'Type a message or press 🎤 to speak...';
+}
+
+async function handleRecordingStop() {
+  const blob = new Blob(state.audioChunks, {type: 'audio/webm'});
+  setInputEnabled(false);
+  const typing = addTyping();
+  toast('Transcribing...', 'info', 2000);
+
+  try {
+    const fd = new FormData();
+    fd.append('audio', blob, 'recording.webm');
+
+    const t0 = Date.now();
+    const sr = await fetch(`${SERVER}/transcribe`, {method:'POST', body: fd});
+    const sd = await sr.json();
+    const sttTime = ((Date.now()-t0)/1000).toFixed(1);
+
+    if (sd.error || !sd.text) {
+      removeTyping(); toast('Transcription failed: ' + (sd.error||'empty'), 'error');
+      setInputEnabled(true); return;
+    }
+
+    const userText = sd.text;
+    removeTyping();
+    addMessage('user', userText);
+    const typing2 = addTyping();
+
+    // LLM
+    const t1 = Date.now();
+    const lr = await fetch(`${SERVER}/chat`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: userText})
+    });
+    const ld = await lr.json();
+    const llmTime = ((Date.now()-t1)/1000).toFixed(1);
+
+    removeTyping();
+    if (ld.error) { toast(ld.error, 'error'); setInputEnabled(true); return; }
+
+    // TTS
+    let ttsTime = null;
+    if (document.getElementById('tts-toggle').checked) {
+      const t2 = Date.now();
+      await speak(ld.reply);
+      ttsTime = ((Date.now()-t2)/1000).toFixed(1);
+    }
+
+    addMessage('aria', ld.reply, {stt: sttTime, llm: llmTime, tts: ttsTime});
+
+  } catch(e) {
+    removeTyping(); toast('Error: ' + e.message, 'error');
+  } finally {
+    setInputEnabled(true);
+    $textInput.focus();
+  }
+}
+
+// ── Event Listeners ───────────────────────────────────────────
+$micBtn.addEventListener('mousedown', startRecording);
+$micBtn.addEventListener('mouseup', stopRecording);
+$micBtn.addEventListener('mouseleave', () => { if (state.recording) stopRecording(); });
+$micBtn.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); });
+$micBtn.addEventListener('touchend',   e => { e.preventDefault(); stopRecording(); });
+
+$sendBtn.addEventListener('click', () => sendMessage($textInput.value));
+$textInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage($textInput.value); }
+});
+$textInput.addEventListener('input', () => {
+  $textInput.style.height = 'auto';
+  $textInput.style.height = Math.min($textInput.scrollHeight, 120) + 'px';
+});
+
+$clearBtn.addEventListener('click', async () => {
+  await fetch(`${SERVER}/history`, {method:'DELETE'});
+  $messages.innerHTML = '';
+  $messages.appendChild($welcome);
+  $welcome.style.display = 'flex';
+  historyItems = [];
+  $histList.innerHTML = '<div style="color:var(--text-dim); font-size:11px; padding:8px 10px">No messages yet.</div>';
+  state.turns = 0;
+  state.llmTimes = []; state.sttTimes = []; state.ttsTimes = [];
+  document.getElementById('stat-turns').textContent = '0';
+  ['stat-avg-llm','stat-avg-stt','stat-avg-tts'].forEach(id => document.getElementById(id).textContent = '—');
+  toast('Conversation cleared', 'success');
+});
+
+function sendChip(el) {
+  sendMessage(el.textContent);
+}
+
+// ── Init ──────────────────────────────────────────────────────
+checkHealth();
+setInterval(checkHealth, 30000);
+$textInput.focus();
+</script>
+</body>
+</html>
