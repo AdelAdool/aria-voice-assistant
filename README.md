@@ -249,7 +249,7 @@ PRs welcome! Please open an issue first for major changes.
 
 ## 📄 License
 
-MIT © [Your Name](https://github.com/YOUR_USERNAME)
+MIT © [AdelAdool](https://github.com/YOUR_USERNAME)
 
 ---
 
